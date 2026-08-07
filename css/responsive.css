@@ -107,7 +107,17 @@
   }
 }
 
-/* ─── Hide mobile toggle on desktop ─────────────────────────── */
+/* ─── Hide mobile-only overlays on desktop ───────────────────── */
+/* .sidebar-overlay is a direct child of the #app grid container.
+   Without an explicit display:none here, it renders as a normal
+   block-level element outside the mobile breakpoint, becomes an
+   implicit grid item, and breaks the #sidebar / #main 2-column
+   layout (forces #main into an implicit second row and collapses
+   #sidebar's row to 0px height). Keep it fully out of grid flow
+   until the mobile media query re-enables it. */
+.sidebar-overlay {
+  display: none;
+}
 
 .mobile-menu-btn {
   display: none;
