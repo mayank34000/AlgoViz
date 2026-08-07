@@ -1,14 +1,17 @@
 import { qs, qsa } from '../utils.js';
-import { STATUS, ARRAY_SIZE_MIN, ARRAY_SIZE_MAX, SPEED_MIN, SPEED_MAX } from '../constants.js';
+import { STATUS } from '../constants.js';
 import { getState } from '../state.js';
 import { toggleTheme, getTheme } from './theme.js';
 
 /*
   Controls wires up all DOM events and delegates to an event map
-  provided by app.js. This keeps controls fully decoupled from
-  sorting logic — it only knows about user intent, not execution.
+  provided by app.js. This module only knows about user intent —
+  never about sorting logic or animation state.
 */
 export function initControls(events) {
+  _syncThemeIcon();        // Fix Bug 4: icon must match the loaded theme immediately
+  _initSliderFills();      // Fix Bug 6: paint slider tracks on page load
+
   _bindAlgorithmSelect(events);
   _bindArrayTypeButtons(events);
   _bindSliders(events);
@@ -24,19 +27,30 @@ export function syncControlState(status, algorithmId) {
   const isActive   = isRunning || isPaused;
   const isFinished = status === STATUS.FINISHED;
 
-  _setDisabled('#btn-start',   isActive || isFinished);
-  _setDisabled('#btn-pause',   !isRunning);
-  _setDisabled('#btn-resume',  !isPaused);
-  _setDisabled('#btn-stop',    !isActive);
-  _setDisabled('#btn-reset',   false);
-  _setDisabled('#btn-generate',isActive);
+  _setDisabled('#btn-start',    isActive || isFinished);
+  _setDisabled('#btn-pause',    !isRunning);
+  _setDisabled('#btn-resume',   !isPaused);
+  _setDisabled('#btn-stop',     !isActive);
+  _setDisabled('#btn-reset',    false);
+  _setDisabled('#btn-generate', isActive);
 
-  qsa('.array-type-btn').forEach(btn => {
-    btn.disabled = isActive;
-  });
+  qsa('.array-type-btn').forEach(btn => { btn.disabled = isActive; });
 
   const algoSelect = qs('#algo-select');
   if (algoSelect) algoSelect.disabled = isActive;
+}
+
+// ─── Init helpers ──────────────────────────────────────────────
+
+function _syncThemeIcon() {
+  const btn = qs('#btn-theme');
+  if (btn) _updateThemeIcon(btn, getTheme());
+}
+
+function _initSliderFills() {
+  [qs('#slider-size'), qs('#slider-speed')].forEach(slider => {
+    if (slider) _updateSliderFill(slider);
+  });
 }
 
 // ─── Binding helpers ───────────────────────────────────────────
@@ -53,8 +67,12 @@ function _bindAlgorithmSelect(events) {
 function _bindArrayTypeButtons(events) {
   qsa('.array-type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      qsa('.array-type-btn').forEach(b => b.classList.remove('active'));
+      qsa('.array-type-btn').forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
       events.onArrayTypeChange(btn.dataset.type);
     });
   });
@@ -65,11 +83,13 @@ function _bindSliders(events) {
   const speedSlider = qs('#slider-speed');
 
   sizeSlider?.addEventListener('input', () => {
+    _updateSliderFill(sizeSlider);
     _setText('#slider-size-val', sizeSlider.value);
     events.onSizeChange(Number(sizeSlider.value));
   });
 
   speedSlider?.addEventListener('input', () => {
+    _updateSliderFill(speedSlider);
     _setText('#slider-speed-val', speedSlider.value);
     events.onSpeedChange(Number(speedSlider.value));
   });
@@ -82,6 +102,7 @@ function _bindActionButtons(events) {
   _onClick('#btn-resume',   events.onResume);
   _onClick('#btn-stop',     events.onStop);
   _onClick('#btn-reset',    events.onReset);
+  _onClick('#btn-home',     events.onHome);
 }
 
 function _bindHeaderButtons(events) {
@@ -98,11 +119,11 @@ function _bindHeaderButtons(events) {
 
 function _bindKeyboard(events) {
   document.addEventListener('keydown', e => {
+    // Don't intercept input/select keyboard events
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
     switch (e.key) {
       case ' ':
-      case 'Space':
         e.preventDefault();
         _handleSpaceKey(events);
         break;
@@ -125,18 +146,22 @@ function _bindKeyboard(events) {
         if (btn) _updateThemeIcon(btn, theme);
         break;
       }
+      case 'h':
+      case 'H':
+        events.onHome?.();
+        break;
     }
   });
 }
 
 function _bindMobileMenu() {
-  const menuBtn  = qs('#btn-mobile-menu');
-  const sidebar  = qs('#sidebar');
-  const overlay  = qs('#sidebar-overlay');
+  const menuBtn = qs('#btn-mobile-menu');
+  const sidebar = qs('#sidebar');
+  const overlay = qs('#sidebar-overlay');
 
   if (!menuBtn || !sidebar) return;
 
-  const open  = () => { sidebar.classList.add('open');  overlay?.classList.add('active'); };
+  const open  = () => { sidebar.classList.add('open');    overlay?.classList.add('active'); };
   const close = () => { sidebar.classList.remove('open'); overlay?.classList.remove('active'); };
 
   menuBtn.addEventListener('click', open);
@@ -156,11 +181,6 @@ function _handleSpaceKey(events) {
   }
 }
 
-function _updateThemeIcon(btn, theme) {
-  btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-  btn.innerHTML = theme === 'dark' ? _sunIcon() : _moonIcon();
-}
-
 // ─── DOM utilities ─────────────────────────────────────────────
 
 function _onClick(selector, handler) {
@@ -177,10 +197,25 @@ function _setText(selector, text) {
   if (el) el.textContent = text;
 }
 
-function _sunIcon() {
+// Paints the filled portion of a range input track via a CSS custom property.
+function _updateSliderFill(slider) {
+  const min  = Number(slider.min)   || 0;
+  const max  = Number(slider.max)   || 100;
+  const val  = Number(slider.value) || 0;
+  const pct  = ((val - min) / (max - min)) * 100;
+  slider.style.setProperty('--range-fill', `${pct}%`);
+}
+
+// In dark mode show the sun (→ switch to light); in light mode show the moon (→ switch to dark).
+function _updateThemeIcon(btn, theme) {
+  btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  btn.innerHTML = theme === 'dark' ? _iconSun() : _iconMoon();
+}
+
+function _iconSun() {
   return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
 }
 
-function _moonIcon() {
+function _iconMoon() {
   return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 }

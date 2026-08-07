@@ -6,7 +6,6 @@ export function radixSort(array) {
   const n = arr.length;
 
   const max = Math.max(...arr);
-  const digitCount = Math.floor(Math.log10(max)) + 1;
 
   for (let exp = 1; Math.floor(max / exp) > 0; exp *= 10) {
     _countingPassByDigit(arr, n, exp, ops);

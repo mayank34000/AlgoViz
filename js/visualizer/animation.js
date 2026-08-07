@@ -1,6 +1,6 @@
 import { OP, STATUS } from '../constants.js';
 import { speedToDelay } from '../utils.js';
-import { getState, setStats } from '../state.js';
+import { getState } from '../state.js';
 
 export class AnimationEngine {
   constructor(renderer, { onStatUpdate, onFinish, onStatusChange }) {
@@ -52,18 +52,26 @@ export class AnimationEngine {
     this._scheduleNext();
   }
 
-  stop() {
+  // stop() notifies callers and resets bar colours.
+  // Pass silent=true when called from reset() so _generate() can control its own
+  // visual + status flow without triggering double UI updates.
+  stop(silent = false) {
     this._status = STATUS.IDLE;
     clearTimeout(this._timerId);
     this._stopElapsedTimer();
     this._ops = [];
     this._index = 0;
-    this.renderer.resetColors();
-    this.onStatusChange(STATUS.IDLE);
+
+    if (!silent) {
+      this.renderer.resetColors();
+      this.onStatusChange(STATUS.IDLE);
+    }
   }
 
+  // Called by _generate() — resets internal counters but lets the caller
+  // manage all visual and status updates to avoid double-firing.
   reset() {
-    this.stop();
+    this.stop(true);
     this._stats = { comparisons: 0, swaps: 0, writes: 0 };
     this._elapsed = 0;
   }
@@ -80,22 +88,37 @@ export class AnimationEngine {
 
   _scheduleNext() {
     if (this._status !== STATUS.RUNNING) return;
+    if (this._index >= this._ops.length) { this._finish(); return; }
+
+    const delay = speedToDelay(getState().speed);
+
+    // Browsers clamp setTimeout to ≥ ~4ms. At very high speeds we batch
+    // multiple operations per tick so we don't fall behind the desired pace.
+    const BROWSER_MIN_DELAY = 4;
+    const opsPerTick = delay < BROWSER_MIN_DELAY
+      ? Math.ceil(BROWSER_MIN_DELAY / Math.max(delay, 0.5))
+      : 1;
+
+    this._timerId = setTimeout(
+      () => this._processBatch(opsPerTick),
+      Math.max(delay, 0)
+    );
+  }
+
+  _processBatch(count) {
+    if (this._status !== STATUS.RUNNING) return;
+
+    for (let i = 0; i < count && this._index < this._ops.length; i++) {
+      const op = this._ops[this._index++];
+      this._applyStats(op);
+      this.renderer.applyOperation(op);
+    }
 
     if (this._index >= this._ops.length) {
       this._finish();
       return;
     }
 
-    const delay = speedToDelay(getState().speed);
-    this._timerId = setTimeout(() => this._processNext(), delay);
-  }
-
-  _processNext() {
-    if (this._status !== STATUS.RUNNING) return;
-
-    const op = this._ops[this._index++];
-    this._applyStats(op);
-    this.renderer.applyOperation(op);
     this.onStatUpdate({ ...this._stats, elapsed: Date.now() - this._startTime });
     this._scheduleNext();
   }

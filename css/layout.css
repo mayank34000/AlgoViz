@@ -24,6 +24,7 @@
   gap: var(--space-1);
   padding: var(--space-6) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .app-title {
@@ -56,10 +57,18 @@
 
 /* ─── Main area ──────────────────────────────────────────────── */
 
+/*
+  5 children in #main:
+    1. #header          → var(--header-h)
+    2. #visualizer-area → 1fr  (fills remaining space)
+    3. #color-legend    → auto
+    4. #stats-row       → auto
+    5. #description-panel → auto
+*/
 #main {
   grid-column: 2;
   display: grid;
-  grid-template-rows: var(--header-h) 1fr auto auto;
+  grid-template-rows: var(--header-h) 1fr auto auto auto;
   height: 100vh;
   overflow: hidden;
   background: var(--bg-root);
@@ -79,6 +88,7 @@
 #visualizer-area {
   position: relative;
   overflow: hidden;
+  min-height: 0; /* prevents flex/grid blowout */
 }
 
 #stats-row {
@@ -104,5 +114,6 @@ body.is-fullscreen #sidebar {
 }
 
 body.is-fullscreen #main {
-  grid-template-rows: var(--header-h) 1fr auto auto;
+  grid-column: 1;
+  grid-template-rows: var(--header-h) 1fr auto auto auto;
 }
