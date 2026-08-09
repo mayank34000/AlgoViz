@@ -1,65 +1,70 @@
 /*
-  router.js — lightweight two-view manager.
+  router.js — manages all top-level views.
 
-  The app has exactly two screens:
-    - "home"       → #view-home
-    - "visualizer" → #view-visualizer
+  Supports an arbitrary number of named views. Each view maps to an
+  element with id="view-{name}". The active view gets .is-visible;
+  inactive views get .is-hidden.
 
-  Both are position:fixed in the DOM at all times. The active view
-  gets .is-visible; the inactive one gets .is-hidden. CSS handles
-  the fade + slide transition; JS only swaps the class names.
-
-  The visualizer is initialised lazily — only when the user first
-  navigates to it. onShowVisualizer is called once and never again.
+  Lazy-init callbacks are fired exactly once when a view is first
+  activated (e.g. building the sorting or searching module on demand).
 */
 
-const VIEWS = Object.freeze({ HOME: 'home', VISUALIZER: 'visualizer' });
 const TRANSITION_MS = 380;
 
-const EL = {
-  home:       () => document.getElementById('view-home'),
-  visualizer: () => document.getElementById('view-visualizer'),
-};
+// Known view names → lazy-init callbacks
+const _lazyInit = {};
+const _initDone = {};
 
-let _onShowVisualizer = null;
-let _visualizerReady  = false;
-let _current          = null;
+let _current = null;
 
-export function initRouter({ onShowVisualizer }) {
-  _onShowVisualizer = onShowVisualizer;
-  _activate(VIEWS.HOME);
+export function initRouter(views) {
+  /*
+    views: { [name]: { onFirst?: fn } }
+    e.g. { home: {}, visualizer: { onFirst: () => app.initSorting() }, searching: { onFirst: () => searchApp.init() } }
+  */
+  Object.entries(views).forEach(([name, cfg]) => {
+    _lazyInit[name] = cfg.onFirst ?? null;
+    _initDone[name] = false;
+  });
+
+  // Show home immediately (no transition on first load)
+  _activate('home');
 }
 
-export function navigateToVisualizer() {
-  if (_current === VIEWS.VISUALIZER) return;
-  _deactivate(VIEWS.HOME);
+export function navigate(to) {
+  if (_current === to) return;
+
+  const from = _current;
+  if (from) _deactivate(from);
+
+  const delay = from ? TRANSITION_MS : 0;
   setTimeout(() => {
-    _activate(VIEWS.VISUALIZER);
-    if (!_visualizerReady) {
-      _visualizerReady = true;
-      _onShowVisualizer?.();
+    _activate(to);
+    if (!_initDone[to] && _lazyInit[to]) {
+      _initDone[to] = true;
+      _lazyInit[to]();
     }
-  }, TRANSITION_MS);
+  }, delay);
 }
 
-export function navigateHome() {
-  if (_current === VIEWS.HOME) return;
-  _deactivate(VIEWS.VISUALIZER);
-  setTimeout(() => _activate(VIEWS.HOME), TRANSITION_MS);
-}
+// ─── Convenience helpers (keep existing call sites working) ────
 
-// ─── Private ──────────────────────────────────────────────────
+export function navigateToVisualizer() { navigate('visualizer'); }
+export function navigateToSearching()  { navigate('searching');  }
+export function navigateHome()         { navigate('home');       }
 
-function _activate(view) {
-  const el = EL[view]?.();
+// ─── Private ───────────────────────────────────────────────────
+
+function _activate(name) {
+  const el = document.getElementById(`view-${name}`);
   if (!el) return;
   el.classList.remove('is-hidden');
   el.classList.add('is-visible');
-  _current = view;
+  _current = name;
 }
 
-function _deactivate(view) {
-  const el = EL[view]?.();
+function _deactivate(name) {
+  const el = document.getElementById(`view-${name}`);
   if (!el) return;
   el.classList.remove('is-visible');
   el.classList.add('is-hidden');

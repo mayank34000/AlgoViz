@@ -5,7 +5,8 @@
    ───────────────────────────────────────────────────────────── */
 
 #view-home,
-#view-visualizer {
+#view-visualizer,
+#view-searching {
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -15,7 +16,8 @@
 
 /* Hidden state — invisible and non-interactive */
 #view-home.is-hidden,
-#view-visualizer.is-hidden {
+#view-visualizer.is-hidden,
+#view-searching.is-hidden {
   opacity: 0;
   pointer-events: none;
   transform: translateY(14px);
@@ -23,10 +25,15 @@
 
 /* Visible state */
 #view-home.is-visible,
-#view-visualizer.is-visible {
+#view-visualizer.is-visible,
+#view-searching.is-visible {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+#view-searching {
+  background: var(--bg-root);
 }
 
 /* The visualizer starts fully hidden; router reveals it */

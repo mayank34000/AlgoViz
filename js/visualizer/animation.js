@@ -1,4 +1,4 @@
-import { OP, STATUS } from '../constants.js';
+import { OP, SOP, STATUS } from '../constants.js';
 import { speedToDelay } from '../utils.js';
 import { getState } from '../state.js';
 
@@ -13,7 +13,7 @@ export class AnimationEngine {
     this._index = 0;
     this._status = STATUS.IDLE;
     this._timerId = null;
-    this._stats = { comparisons: 0, swaps: 0, writes: 0 };
+    this._stats = _emptyStats();
     this._startTime = 0;
     this._elapsed = 0;
     this._timerInterval = null;
@@ -22,7 +22,7 @@ export class AnimationEngine {
   load(operations) {
     this._ops = operations;
     this._index = 0;
-    this._stats = { comparisons: 0, swaps: 0, writes: 0 };
+    this._stats = _emptyStats();
     this._elapsed = 0;
   }
 
@@ -52,37 +52,26 @@ export class AnimationEngine {
     this._scheduleNext();
   }
 
-  // stop() notifies callers and resets bar colours.
-  // Pass silent=true when called from reset() so _generate() can control its own
-  // visual + status flow without triggering double UI updates.
   stop(silent = false) {
     this._status = STATUS.IDLE;
     clearTimeout(this._timerId);
     this._stopElapsedTimer();
     this._ops = [];
     this._index = 0;
-
     if (!silent) {
       this.renderer.resetColors();
       this.onStatusChange(STATUS.IDLE);
     }
   }
 
-  // Called by _generate() — resets internal counters but lets the caller
-  // manage all visual and status updates to avoid double-firing.
   reset() {
     this.stop(true);
-    this._stats = { comparisons: 0, swaps: 0, writes: 0 };
+    this._stats = _emptyStats();
     this._elapsed = 0;
   }
 
-  get status() {
-    return this._status;
-  }
-
-  get isActive() {
-    return this._status === STATUS.RUNNING || this._status === STATUS.PAUSED;
-  }
+  get status()   { return this._status; }
+  get isActive() { return this._status === STATUS.RUNNING || this._status === STATUS.PAUSED; }
 
   // ─── Private ──────────────────────────────────────────────────
 
@@ -91,18 +80,10 @@ export class AnimationEngine {
     if (this._index >= this._ops.length) { this._finish(); return; }
 
     const delay = speedToDelay(getState().speed);
+    const BROWSER_MIN = 4;
+    const opsPerTick = delay < BROWSER_MIN ? Math.ceil(BROWSER_MIN / Math.max(delay, 0.5)) : 1;
 
-    // Browsers clamp setTimeout to ≥ ~4ms. At very high speeds we batch
-    // multiple operations per tick so we don't fall behind the desired pace.
-    const BROWSER_MIN_DELAY = 4;
-    const opsPerTick = delay < BROWSER_MIN_DELAY
-      ? Math.ceil(BROWSER_MIN_DELAY / Math.max(delay, 0.5))
-      : 1;
-
-    this._timerId = setTimeout(
-      () => this._processBatch(opsPerTick),
-      Math.max(delay, 0)
-    );
+    this._timerId = setTimeout(() => this._processBatch(opsPerTick), Math.max(delay, 0));
   }
 
   _processBatch(count) {
@@ -114,10 +95,7 @@ export class AnimationEngine {
       this.renderer.applyOperation(op);
     }
 
-    if (this._index >= this._ops.length) {
-      this._finish();
-      return;
-    }
+    if (this._index >= this._ops.length) { this._finish(); return; }
 
     this.onStatUpdate({ ...this._stats, elapsed: Date.now() - this._startTime });
     this._scheduleNext();
@@ -125,9 +103,24 @@ export class AnimationEngine {
 
   _applyStats(op) {
     switch (op.type) {
+      // Sorting ops
       case OP.COMPARE:   this._stats.comparisons++; break;
       case OP.SWAP:      this._stats.swaps++;        break;
       case OP.OVERWRITE: this._stats.writes++;       break;
+      // Searching ops
+      case SOP.COMPARE:
+        this._stats.comparisons++;
+        this._stats.currentIndex = op.index;
+        break;
+      case SOP.VISIT:
+        this._stats.visited++;
+        break;
+      case SOP.FOUND:
+        this._stats.foundIndex = op.index;
+        break;
+      case SOP.NOT_FOUND:
+        this._stats.foundIndex = -1;
+        break;
     }
   }
 
@@ -150,4 +143,8 @@ export class AnimationEngine {
   _stopElapsedTimer() {
     clearInterval(this._timerInterval);
   }
+}
+
+function _emptyStats() {
+  return { comparisons: 0, swaps: 0, writes: 0, visited: 0, currentIndex: -1, foundIndex: -2 };
 }
