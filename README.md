@@ -1,4 +1,4 @@
-# SortViz — Sorting Algorithm Visualizer
+# AlgoViz — Algorithm Visualizer
 
 A professional, interactive visualizer for ten classic sorting algorithms. Built with vanilla HTML, CSS, and JavaScript — no frameworks, no build tools, no dependencies. Designed to be a polished portfolio piece that demonstrates both software architecture and frontend craft.
 
@@ -285,7 +285,3 @@ That's it. No other file needs to change.
 - **Java 11+** — for the reference algorithm implementations
 
 ---
-
-## License
-
-MIT — free to use, modify, and distribute. Attribution appreciated.
